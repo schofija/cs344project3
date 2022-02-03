@@ -7,7 +7,38 @@
 #include <limits.h>
 #include <string.h>
 #include <sys/wait.h> //wait
+#include <signal.h>
 
+void dollarztopid(char* original, const pid_t pid)
+{
+	const int pidint = pid;
+	char pidstr[11] = {} ;
+	sprintf(pidstr, "%d", pidint);
+
+	for (int i = 0; i < strlen(original); i++)
+	{
+		if(original[i] == '$')
+		{
+			i++;
+			if(original[i] == '$')
+			{
+				char* tmp1 = NULL;
+				tmp1 = malloc(sizeof(original) + sizeof(pidstr));
+				char* tmp2 = NULL;
+				tmp2 = malloc(sizeof(original));
+				strncpy(tmp1, original, i - 1);
+				strncpy(tmp2, &original[i+1], strlen(original) - (i));
+				strcat(tmp1, pidstr);
+				strcat(tmp1, tmp2);
+				//original = realloc(original, sizeof(original) + sizeof(pidstr));
+				strcpy(original, tmp1);
+				free(tmp1);
+				free(tmp2);			
+			}
+				
+		}
+	}
+}
 
 int
 main(int argc, char *argv[])
@@ -20,7 +51,14 @@ main(int argc, char *argv[])
   char *login;
   char hostname[HOST_NAME_MAX+1];
   int status = NULL;
-  
+
+	const pid_t smallshpid = getpid();
+	
+	if(getpid() == smallshpid)
+	{
+		signal(SIGINT, SIG_IGN);
+	}
+	
   do
   {
     { /* Increase cwd buffer size until getcwd is successful */
@@ -54,13 +92,22 @@ main(int argc, char *argv[])
 
     /* Print out a simple prompt */
     fprintf(stderr, ": ");
-    
+	
     /* Call custom tokenizing function */
     num_toks = readTokens(&toks, &toks_size);
     size_t i;
 
     if (num_toks > 0)
     {
+		/* 	Iterate through our tokens, calling dollarztopid()
+			This results in all instances of "$$" being
+			replaced with smallsh's pid.
+		*/
+		for (size_t i=0; i<num_toks; i++)
+		{
+			dollarztopid(toks[i], smallshpid);
+		}
+			
 		if (strcmp(toks[0], "cd")==0)
 		{ /* cd command -- shell internals */
 			if (num_toks == 1) 
@@ -83,7 +130,7 @@ main(int argc, char *argv[])
 		}
 		else if (strcmp(toks[0], "status")==0)
 		{ /* echo command! -- shell internals */
-			printf("%d", status);
+			printf("%d\n", status);
 			fflush(stdout);
 			
 		}
@@ -95,6 +142,8 @@ main(int argc, char *argv[])
 
 			free(toks);
 			free(cwd);
+			signal(SIGQUIT, SIG_IGN);
+			kill(0, SIGQUIT);
 			exit(0);
 		}
 		else if(strcmp(toks[0], "#") == 0)
@@ -107,6 +156,7 @@ main(int argc, char *argv[])
 			pid_t pid = fork();
 			if (pid == 0)
 			{ /* child */
+				signal(SIGINT, SIG_DFL);
 				execvp(toks[0], toks);
 				err(errno, "failed to exec");
 			}
