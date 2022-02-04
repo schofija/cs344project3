@@ -178,9 +178,12 @@ main(int argc, char *argv[])
   
 
   size_t i;
-  for (i=0; i<toks_size; ++i)
+  if(toks_size > 0)
   {
-    free(toks[i]);
+	  for (i=0; i<toks_size; ++i)
+	  {
+		free(toks[i]);
+	  }
   }
   free(toks);
   free(cwd);
