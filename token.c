@@ -33,12 +33,13 @@
  *  return value: 3
  */
  
-#include token-parser.h
+#include "token-parser.h"
 #include <stdio.h>
 #include <err.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <signal.h>
+#include <string.h>
 
 #ifndef BASE_TOK_SIZE
 	#define BASE_TOK_SIZE 16
@@ -73,56 +74,64 @@ size_t readTokens(char ***toks, size_t *tok_num)
 	
 	size_t i = 0;
 	const char quote = '\0'; //not sure if this can be a const or not.
-	while(1)
+
+	#if 0
+	while(i >= tok_size) // This loops runs whenever we iterate past our currently allocated tok_size
 	{
-		#if 0
-		while(i >= tok_size) // This loops runs whenever we iterate past our currently allocated tok_size
+		tok_size *= 2;
+		if(((*toks)[cur_tok] = realloc((*toks)[cur_tok], tok_size * sizeof((*toks)[cur_tok]))) == NULL)
 		{
-			tok_size *= 2;
-			if(((*toks)[cur_tok] = realloc((*toks)[cur_tok], tok_size * sizeof((*toks)[cur_tok]))) == NULL)
-			{
-				err(errno, "realloc failed");
-			}
+			err(errno, "realloc failed");
 		}
-		#endif
-		
-		char* line = NULL; // Contains user's entire input
-		size_t linelength = 0;
-		ssize_t linesize = 0;
-		linesize = getline(line, &linelength, stdin); //Getting user input from stdin
-		
-		char* tmptok; // Temporary token
-		char* saveptr;
-		while( tmptok = strtok_r(line, " ", &saveptr) != NULL )
+	}
+	#endif
+			
+	char* line = NULL; // Contains user's entire input
+	size_t linelength = 0;
+	int linesize = 0;
+	linesize = getline(&line, &linelength, stdin); //Getting user input from stdin
+	
+	char* tmptok; // Temporary token
+	char* saveptr = NULL;
+	tmptok = strtok_r(line, " \n", &saveptr);
+	while(tmptok != NULL)
+	{	
+		printf("tmptok:   %s @ cur_tok: %d\n", tmptok, cur_tok);
+
+		while(1)
 		{
-			while(1)
+			// First, we must make sure we have allocated enough tokens
+			if(cur_tok >= *tok_num - 1)
 			{
-				// First, we must make sure we have allocated enough tokens
-				if(cur_tok > tok_num)
-				{
-					toknum *= 2;
-					//do a realloc here...
-				}
+				printf("need to do a realloc here....");
+				*tok_num *= 2;
+				//do a realloc here...
+			}
 				
-				/* 	If we have alloc'd enough space within the token, 
-					simply copy token over and break. */
-				if( sizeof((*toks)[cur_tok]) >= sizeof(tmptok) ) 
+			/* 	If we have alloc'd enough space within the token, 
+				simply copy token over and break. */
+			if( tok_size >= strlen(tmptok) ) 
+			{
+				//printf("Copying token over......\n");
+				(*toks)[cur_tok] = tmptok;
+				(*toks)[cur_tok + 1] = (char*)(0);
+				//printf("Copy successful, (*toks)[cur_tok] == %s\n", *toks[cur_tok]);
+				cur_tok++;
+				tmptok = strtok_r(NULL, " \n", &saveptr);
+				break;
+			}	
+			else // Otherwize, increase tok_size, realloc, and try again!
+			{
+				//printf("Increasing size of tok_size....\n");
+				tok_size *= 2;
+				if(((*toks)[cur_tok] = realloc((*toks)[cur_tok], tok_size * sizeof((*toks)[cur_tok]))) == NULL)
 				{
-					(*toks)[cur_tok] = tmptok;
-					cur_tok++;
-					break;
-				}	
-				else // Otherwize, increase tok_size, realloc, and try again!
-				{
-					tok_size *= 2;
-					if(((*toks)[cur_tok] = realloc((*toks)[cur_tok], tok_size * sizeof((*toks)[cur_tok]))) == NULL)
-					{
-						err(errno, "realloc failed");
-					}
+					err(errno, "realloc failed");
 				}
 			}
 		}
 	}
-	
+
+//printf("hey im returning now... lol!! :D\n");
 return cur_tok;
 }

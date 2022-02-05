@@ -9,36 +9,8 @@
 #include <sys/wait.h> //wait
 #include <signal.h>
 
-void dollarztopid(char* original, const pid_t pid)
-{
-	const int pidint = pid;
-	char pidstr[11] = {} ;
-	sprintf(pidstr, "%d", pidint);
-
-	for (int i = 0; i < strlen(original); i++)
-	{
-		if(original[i] == '$')
-		{
-			i++;
-			if(original[i] == '$')
-			{
-				char* tmp1 = NULL;
-				tmp1 = malloc(sizeof(original) + sizeof(pidstr));
-				char* tmp2 = NULL;
-				tmp2 = malloc(sizeof(original));
-				strncpy(tmp1, original, i - 1);
-				strncpy(tmp2, &original[i+1], strlen(original) - (i));
-				strcat(tmp1, pidstr);
-				strcat(tmp1, tmp2);
-				//original = realloc(original, sizeof(original) + sizeof(pidstr));
-				strcpy(original, tmp1);
-				free(tmp1);
-				free(tmp2);			
-			}
-				
-		}
-	}
-}
+int usrinputcheck(char**, const int, unsigned int*, unsigned int*);
+void dollarztopid(char*, const pid_t);
 
 int
 main(int argc, char *argv[])
@@ -97,14 +69,23 @@ main(int argc, char *argv[])
     num_toks = readTokens(&toks, &toks_size);
     size_t i;
 
-    if (num_toks > 0)
+
+	unsigned int ior = 0; 	//Flag for input/output redirection ('>').
+	unsigned int bg = 0; 	//Flag for running proc in background ('&' at end of input line)
+
+    if(usrinputcheck(toks, num_toks, &ior, &bg) != -1)
     {
+		printf("ior = %d | bg = %d\n", ior, bg);
+		fflush(stdout);
+		
 		/* 	Iterate through our tokens, calling dollarztopid()
 			This results in all instances of "$$" being
 			replaced with smallsh's pid.
 		*/
 		for (size_t i=0; i<num_toks; i++)
 		{
+			printf("toks[%d] == (%s)\n", i, toks[i]);
+			fflush(stdout);
 			dollarztopid(toks[i], smallshpid);
 		}
 			
@@ -137,7 +118,7 @@ main(int argc, char *argv[])
 		else if (strcmp(toks[0], "exit")==0)
 		{ /* echo command! -- shell internals */
 			size_t i;
-			for (i=0; i<toks_size; ++i)
+			for (i=0; i<num_toks; ++i)
 				free(toks[i]);
 
 			free(toks);
@@ -152,10 +133,11 @@ main(int argc, char *argv[])
 		}
 		else
 		{ /* Default behavior: fork and exec */
+			
 			int childstatus = NULL;
 			pid_t pid = fork();
 			if (pid == 0)
-			{ /* child */
+			{ /* child */				
 				signal(SIGINT, SIG_DFL);
 				execvp(toks[0], toks);
 				err(errno, "failed to exec");
@@ -168,10 +150,10 @@ main(int argc, char *argv[])
 			else
 			{
 				pid = waitpid(pid, &childstatus, 0);
+
 				if(WIFEXITED(childstatus))
 					status = WEXITSTATUS(childstatus);
 			}
-        //childstatus = wait(NULL);
 		}
     }
   } while(1);//while (num_toks > 0);
@@ -188,4 +170,83 @@ main(int argc, char *argv[])
   free(toks);
   free(cwd);
 
+}
+
+/*
+	Checks for the following within our input
+	- If num_toks > 0
+	- If line starts with '#'
+	- Presence of '>' or '&'
+	
+	Returns -1 if line should not be ran (0 tokens, 
+		or line starts with '#')
+	Returns 0 otherwise.
+	
+	Sets input/output redirection flag (ior) to 1 if '>' is found (0 otherwise).
+	Sets background flag (bg) to 1 if '&' is present at end of input (0 otherwise).
+*/
+int usrinputcheck(char** toks, const int num_toks, unsigned int *ior, unsigned int *bg)
+{
+	*ior = 0;
+	*bg = 0;
+	
+	if(num_toks == 0)
+		return -1;
+
+	else if(num_toks > 0 && toks[0][0] == '#')
+		return -1;
+
+	else
+	{
+		for(size_t i = 0; i < num_toks; i++)
+		{
+			if(strcmp(toks[i], ">") == 0)
+			{
+				*ior = 1;
+			}
+		}
+		
+		if(strcmp(toks[num_toks - 1], "&") == 0)
+		{
+			*bg = 1;
+		}
+		return 0;
+	}
+}
+
+/*
+	Finds any instances of "$$" within a given token (original)
+	and replaces it with the given pid.
+	
+	Value of char* original is modified.
+	No return value.
+*/
+void dollarztopid(char* original, const pid_t pid)
+{
+	const int pidint = pid;
+	char pidstr[11] = {} ;
+	sprintf(pidstr, "%d", pidint);
+
+	for (int i = 0; i < strlen(original); i++)
+	{
+		if(original[i] == '$')
+		{
+			i++;
+			if(original[i] == '$')
+			{
+				char* tmp1 = NULL;
+				tmp1 = malloc(sizeof(original) + sizeof(pidstr));
+				char* tmp2 = NULL;
+				tmp2 = malloc(sizeof(original));
+				strncpy(tmp1, original, i - 1);
+				strncpy(tmp2, &original[i+1], strlen(original) - (i));
+				strcat(tmp1, pidstr);
+				strcat(tmp1, tmp2);
+				//original = realloc(original, sizeof(original) + sizeof(pidstr));
+				strcpy(original, tmp1);
+				free(tmp1);
+				free(tmp2);			
+			}		
+		}
+	}
 }
