@@ -8,9 +8,56 @@
 #include <string.h>
 #include <sys/wait.h> //wait
 #include <signal.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
-int usrinputcheck(char**, const int, unsigned int*, unsigned int*);
+int usrinputcheck(char**, size_t*, unsigned int*, unsigned int*, unsigned int*);
 void dollarztopid(char*, const pid_t);
+
+/*
+	This function is called when input/output redirection is needed.
+	The goal of this function is to properly redirect i/o before the
+	child calls exec.
+	
+	Ya.
+*/
+void ioredirect(char** toks, const int inrd, const int outrd)
+{
+	/*
+	if(inrd != -1)
+	{
+		char* filename = toks[inrd + 1];
+		int fd = 0;
+		if( (fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, S_IRWXU | S_IRWXG)) != -1)
+		{
+			dup2(fd, STDOUT_FILENO);
+			dup2(fd, STDERR_FILENO);
+			
+			toks[inrd + 1] = (char*)(0);
+			//toks[inrd] = (char*)(0);
+		}
+	}
+	*/
+	
+	if(outrd != -1)
+	{
+		char* filename = toks[outrd + 1];
+		//printf("hey\n");
+		//printf( "FILENAME: %s", filename);
+		fflush(stdout);
+		int fd = 0;
+		if( (fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, S_IRWXU | S_IRWXG)) != -1)
+		{
+			dup2(fd, STDOUT_FILENO);
+			//dup2(fd, STDERR_FILENO);
+			
+			toks[outrd + 1] = (char*)(0);
+			toks[outrd] = (char*)(0);
+		}
+	}
+}
+
 
 int
 main(int argc, char *argv[])
@@ -70,12 +117,13 @@ main(int argc, char *argv[])
     size_t i;
 
 
-	unsigned int ior = 0; 	//Flag for input/output redirection ('>').
-	unsigned int bg = 0; 	//Flag for running proc in background ('&' at end of input line)
+	unsigned int inrd = -1; 		//Flag for input redirection ('<')
+	unsigned int outrd = -1; 	//Flag for output redirection ('>').
+	unsigned int bg = 0; 		//Flag for running proc in background ('&' at end of input line)
 
-    if(usrinputcheck(toks, num_toks, &ior, &bg) != -1)
+    if(usrinputcheck(toks, &num_toks, &inrd, &outrd, &bg) != -1)
     {
-		printf("ior = %d | bg = %d\n", ior, bg);
+		printf("inrd = %d, outrd = %d | bg = %d\n", inrd, outrd, bg);
 		fflush(stdout);
 		
 		/* 	Iterate through our tokens, calling dollarztopid()
@@ -84,8 +132,6 @@ main(int argc, char *argv[])
 		*/
 		for (size_t i=0; i<num_toks; i++)
 		{
-			printf("toks[%d] == (%s)\n", i, toks[i]);
-			fflush(stdout);
 			dollarztopid(toks[i], smallshpid);
 		}
 			
@@ -128,8 +174,8 @@ main(int argc, char *argv[])
 			exit(0);
 		}
 		else if(strcmp(toks[0], "#") == 0)
-		{	/* This line is a comment. Do nothing! */
-			
+		{	
+			/* This line is a comment. Do nothing! */	
 		}
 		else
 		{ /* Default behavior: fork and exec */
@@ -137,7 +183,14 @@ main(int argc, char *argv[])
 			int childstatus = NULL;
 			pid_t pid = fork();
 			if (pid == 0)
-			{ /* child */				
+			{ /* child */	
+
+				/* Check for i/o redirection */
+				if(inrd != -1 || outrd != -1)
+				{
+					ioredirect(toks, inrd, outrd);
+				}
+
 				signal(SIGINT, SIG_DFL);
 				execvp(toks[0], toks);
 				err(errno, "failed to exec");
@@ -149,7 +202,10 @@ main(int argc, char *argv[])
 			}
 			else
 			{
-				pid = waitpid(pid, &childstatus, 0);
+				if(bg == 0)
+					pid = waitpid(pid, &childstatus, 0);
+				else if (bg != 0)
+					pid = waitpid(pid, &childstatus, WNOHANG);
 
 				if(WIFEXITED(childstatus))
 					status = WEXITSTATUS(childstatus);
@@ -176,39 +232,49 @@ main(int argc, char *argv[])
 	Checks for the following within our input
 	- If num_toks > 0
 	- If line starts with '#'
-	- Presence of '>' or '&'
+	- Presence of '<'/'>' or '&'
 	
 	Returns -1 if line should not be ran (0 tokens, 
 		or line starts with '#')
 	Returns 0 otherwise.
 	
-	Sets input/output redirection flag (ior) to 1 if '>' is found (0 otherwise).
+	Sets input/output redirection flag (inrd/outrd) to its index if '<'/'>' is found (0 otherwise).
+	
 	Sets background flag (bg) to 1 if '&' is present at end of input (0 otherwise).
+	When background flag is set, '&' is replaced with char*(0), and num_toks is decreased by 1.
+	Note-- this means the first 2 arguments can be modified.
 */
-int usrinputcheck(char** toks, const int num_toks, unsigned int *ior, unsigned int *bg)
+int usrinputcheck(char** toks, size_t *num_toks, unsigned int *inrd, unsigned int *outrd, unsigned int *bg)
 {
-	*ior = 0;
+	*inrd = -1;
+	*outrd = -1;
 	*bg = 0;
 	
-	if(num_toks == 0)
+	if(*num_toks == 0)
 		return -1;
 
-	else if(num_toks > 0 && toks[0][0] == '#')
+	else if(*num_toks > 0 && toks[0][0] == '#')
 		return -1;
 
 	else
 	{
-		for(size_t i = 0; i < num_toks; i++)
+		for(size_t i = 0; i < *num_toks; i++)
 		{
-			if(strcmp(toks[i], ">") == 0)
+			if(strcmp(toks[i], "<") == 0) /* Sets input redirection flag */
 			{
-				*ior = 1;
+				*inrd = i;
+			}
+			else if(strcmp(toks[i], ">") == 0) /* Sets output redirection flag */
+			{
+				*outrd = i;
 			}
 		}
 		
-		if(strcmp(toks[num_toks - 1], "&") == 0)
+		if(strcmp(toks[*num_toks - 1], "&") == 0)
 		{
-			*bg = 1;
+			*bg = 1; /* Sets background flag */
+			toks[*num_toks - 1] = (char*)(0);
+			*num_toks = *num_toks - 1;
 		}
 		return 0;
 	}

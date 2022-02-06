@@ -96,8 +96,6 @@ size_t readTokens(char ***toks, size_t *tok_num)
 	tmptok = strtok_r(line, " \n", &saveptr);
 	while(tmptok != NULL)
 	{	
-		printf("tmptok:   %s @ cur_tok: %d\n", tmptok, cur_tok);
-
 		while(1)
 		{
 			// First, we must make sure we have allocated enough tokens
