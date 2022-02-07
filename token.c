@@ -46,7 +46,7 @@
 #endif
 
 #ifndef BASE_TOK_NUM
-	#define BASE_TOK_NUM 16
+	#define BASE_TOK_NUM 512
 #endif
 
 size_t readTokens(char ***toks, size_t *tok_num)
@@ -101,9 +101,9 @@ size_t readTokens(char ***toks, size_t *tok_num)
 			// First, we must make sure we have allocated enough tokens
 			if(cur_tok >= *tok_num - 1)
 			{
-				printf("need to do a realloc here....");
-				*tok_num *= 2;
-				//do a realloc here...
+				//Leaving this blank for now
+				printf("need to realloc!\n");
+				fflush(stdout);
 			}
 				
 			/* 	If we have alloc'd enough space within the token, 

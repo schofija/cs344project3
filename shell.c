@@ -14,50 +14,44 @@
 
 int usrinputcheck(char**, size_t*, unsigned int*, unsigned int*, unsigned int*);
 void dollarztopid(char*, const pid_t);
+int ioredirect(char**, int, const int, const int);
 
-/*
-	This function is called when input/output redirection is needed.
-	The goal of this function is to properly redirect i/o before the
-	child calls exec.
-	
-	Ya.
-*/
-void ioredirect(char** toks, const int inrd, const int outrd)
+pid_t children[999];
+int num_children = 0; // # of background child processes
+
+void removechild(int index)
 {
-	/*
-	if(inrd != -1)
-	{
-		char* filename = toks[inrd + 1];
-		int fd = 0;
-		if( (fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, S_IRWXU | S_IRWXG)) != -1)
-		{
-			dup2(fd, STDOUT_FILENO);
-			dup2(fd, STDERR_FILENO);
-			
-			toks[inrd + 1] = (char*)(0);
-			//toks[inrd] = (char*)(0);
-		}
-	}
-	*/
+	for(int i = index; i < num_children; i++)
+    {
+        children[i] = children[i + 1];
+    }
 	
-	if(outrd != -1)
+	for(int i=0; i<num_children; i++)
+    {
+            printf("%d\n", children[i]);
+    }
+}
+
+void handlesig()
+{
+	for(int i = 0; i < num_children; i++)
 	{
-		char* filename = toks[outrd + 1];
-		//printf("hey\n");
-		//printf( "FILENAME: %s", filename);
-		fflush(stdout);
-		int fd = 0;
-		if( (fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, S_IRWXU | S_IRWXG)) != -1)
+		int childstatus;
+		if(waitpid(children[i], &childstatus, WNOHANG) != 0)
 		{
-			dup2(fd, STDOUT_FILENO);
-			//dup2(fd, STDERR_FILENO);
-			
-			toks[outrd + 1] = (char*)(0);
-			toks[outrd] = (char*)(0);
+			if(WIFEXITED(childstatus))
+			{
+				int status = WEXITSTATUS(childstatus);
+				printf("\nbackground pid %d is done: terminated by signal %d\n:", children[i], childstatus);
+			}
+			else
+				printf("\nbackground pid %d is done: terminated by signal %d\n:", children[i], WTERMSIG(childstatus));
+
+			fflush(stdout);
+			removechild(children[i]);
 		}
 	}
 }
-
 
 int
 main(int argc, char *argv[])
@@ -70,7 +64,7 @@ main(int argc, char *argv[])
   char *login;
   char hostname[HOST_NAME_MAX+1];
   int status = NULL;
-
+  
 	const pid_t smallshpid = getpid();
 	
 	if(getpid() == smallshpid)
@@ -110,7 +104,7 @@ main(int argc, char *argv[])
     gethostname(hostname, sizeof(hostname));
 
     /* Print out a simple prompt */
-    fprintf(stderr, ": ");
+    fprintf(stderr, ":");
 	
     /* Call custom tokenizing function */
     num_toks = readTokens(&toks, &toks_size);
@@ -123,12 +117,12 @@ main(int argc, char *argv[])
 
     if(usrinputcheck(toks, &num_toks, &inrd, &outrd, &bg) != -1)
     {
-		printf("inrd = %d, outrd = %d | bg = %d\n", inrd, outrd, bg);
-		fflush(stdout);
+		//printf("inrd = %d, outrd = %d | bg = %d\n", inrd, outrd, bg);
+		//fflush(stdout);
 		
 		/* 	Iterate through our tokens, calling dollarztopid()
 			This results in all instances of "$$" being
-			replaced with smallsh's pid.
+			replaced with smallsh's pid...
 		*/
 		for (size_t i=0; i<num_toks; i++)
 		{
@@ -149,12 +143,14 @@ main(int argc, char *argv[])
 			  perror("Failed to change directory");
 			}
 		}
+		#if 0
 		else if (strcmp(toks[0], "echo")==0)
 		{ /* echo command! -- shell internals */
 			if (num_toks > 1) printf("%s", toks[1]);
 			for (i=2; i<num_toks; ++i) printf(" %s", toks[i]);
 			printf("\n");
 		}
+		#endif
 		else if (strcmp(toks[0], "status")==0)
 		{ /* echo command! -- shell internals */
 			printf("%d\n", status);
@@ -180,20 +176,26 @@ main(int argc, char *argv[])
 		else
 		{ /* Default behavior: fork and exec */
 			
+			if(bg == 1)
+			{
+				signal(SIGCHLD,handlesig);
+			}
+			
 			int childstatus = NULL;
 			pid_t pid = fork();
 			if (pid == 0)
 			{ /* child */	
 
 				/* Check for i/o redirection */
-				if(inrd != -1 || outrd != -1)
+				if(ioredirect(toks, num_toks, inrd, outrd) != -1)
 				{
-					ioredirect(toks, inrd, outrd);
+					/* Child will respond to SIGINT */
+					signal(SIGINT, SIG_DFL);
+					
+					execvp(toks[0], toks);
+					err(errno, "failed to exec");
 				}
-
-				signal(SIGINT, SIG_DFL);
-				execvp(toks[0], toks);
-				err(errno, "failed to exec");
+				exit(1);
 			}
 			else if (pid == -1)
 			{
@@ -203,12 +205,21 @@ main(int argc, char *argv[])
 			else
 			{
 				if(bg == 0)
+				{
 					pid = waitpid(pid, &childstatus, 0);
+				}
 				else if (bg != 0)
+				{
+					printf("background pid is %d\n", pid);
+					children[num_children] = pid;
+					num_children++;
 					pid = waitpid(pid, &childstatus, WNOHANG);
+				}
 
-				if(WIFEXITED(childstatus))
+				if(WIFEXITED(childstatus) && bg == 0)
+				{
 					status = WEXITSTATUS(childstatus);
+				}
 			}
 		}
     }
@@ -308,11 +319,66 @@ void dollarztopid(char* original, const pid_t pid)
 				strncpy(tmp2, &original[i+1], strlen(original) - (i));
 				strcat(tmp1, pidstr);
 				strcat(tmp1, tmp2);
-				//original = realloc(original, sizeof(original) + sizeof(pidstr));
+				//char * tmp3 = realloc(original, sizeof(tmp1));
+
 				strcpy(original, tmp1);
 				free(tmp1);
 				free(tmp2);			
 			}		
 		}
 	}
+}
+
+/*
+	This function is called when input/output redirection is needed.
+	The goal of this function is to properly redirect i/o before the
+	child calls exec.
+	
+	Returns 0 if program is okay to exec.
+	Returns -1 if program should NOT exec.
+*/
+int ioredirect(char** toks, int num_toks, const int inrd, const int outrd)
+{
+	
+	if(inrd != -1 && inrd < num_toks - 1)
+	{
+		char* filename = toks[inrd + 1];
+		int fd = 0;
+		if( (fd = open(filename, O_RDONLY)) != -1)
+		{
+			if( dup2(fd, STDIN_FILENO) == -1)
+			{
+				return -1;
+			}
+			
+			toks[inrd + 1] = (char*)(0);
+			toks[inrd] = (char*)(0);
+			
+			close(fd);
+		}
+		else
+		{
+			return -1;
+		}
+	}
+	
+	if(outrd != -1 && outrd < num_toks - 1)
+	{
+		char* filename = toks[outrd + 1];
+		//printf("hey\n");
+		//printf( "FILENAME: %s", filename);
+		fflush(stdout);
+		int fd = 0;
+		if( (fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, S_IRWXU | S_IRWXG)) != -1)
+		{
+			dup2(fd, STDOUT_FILENO);
+			//dup2(fd, STDERR_FILENO);
+			
+			toks[outrd + 1] = (char*)(0);
+			toks[outrd] = (char*)(0);
+			
+			close(fd);
+		}
+	}
+return 0;
 }
