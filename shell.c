@@ -1,4 +1,3 @@
-#include "token-parser.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -6,52 +5,45 @@
 #include <err.h>
 #include <limits.h>
 #include <string.h>
-#include <sys/wait.h> //wait
+#include <sys/wait.h>
 #include <signal.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 
-int usrinputcheck(char**, size_t*, unsigned int*, unsigned int*, unsigned int*);
-void dollarztopid(char*, const pid_t);
-int ioredirect(char**, int, const int, const int);
+#include "token-parser.h"
+#include "input-handling.h"
 
-pid_t children[999];
+#ifndef MAX_BGPROCS
+	#define MAX_BGPROCS 999
+#endif
+
+/* These global variables are used to store the pid values of
+	all background child processes currently running.
+*/
+pid_t children[MAX_BGPROCS];
 int num_children = 0; // # of background child processes
 
-void removechild(int index)
+/* Background mode flag */
+unsigned int fg_onlymode = 0;
+unsigned int fg_onlymodeflag = 0;
+
+void handlesigchld();
+
+void handlesigtstp()
 {
-	for(int i = index; i < num_children; i++)
-    {
-        children[i] = children[i + 1];
-    }
+	fg_onlymodeflag = 1;
 	
-	for(int i=0; i<num_children; i++)
-    {
-            printf("%d\n", children[i]);
-    }
-}
-
-void handlesig()
-{
-	for(int i = 0; i < num_children; i++)
+	if(fg_onlymode == 0)
 	{
-		int childstatus;
-		if(waitpid(children[i], &childstatus, WNOHANG) != 0)
-		{
-			if(WIFEXITED(childstatus))
-			{
-				int status = WEXITSTATUS(childstatus);
-				printf("\nbackground pid %d is done: terminated by signal %d\n:", children[i], childstatus);
-			}
-			else
-				printf("\nbackground pid %d is done: terminated by signal %d\n:", children[i], WTERMSIG(childstatus));
-
-			fflush(stdout);
-			removechild(children[i]);
-		}
+		fg_onlymode = 1;
 	}
+	else if(fg_onlymode == 1)
+	{
+		fg_onlymode = 0;
+	}	
 }
+
 
 int
 main(int argc, char *argv[])
@@ -59,10 +51,10 @@ main(int argc, char *argv[])
   char **toks = NULL;
   size_t toks_size;
   size_t num_toks;
-  char *cwd = NULL;
-  char *tmp_cwd;
-  char *login;
-  char hostname[HOST_NAME_MAX+1];
+  //char *cwd = NULL;
+  //char *tmp_cwd;
+  //char *login;
+  //char hostname[HOST_NAME_MAX+1];
   int status = NULL;
   
 	const pid_t smallshpid = getpid();
@@ -70,10 +62,13 @@ main(int argc, char *argv[])
 	if(getpid() == smallshpid)
 	{
 		signal(SIGINT, SIG_IGN);
+		signal(SIGTSTP, handlesigtstp);
 	}
 	
   do
   {
+	  
+	#if 0
     { /* Increase cwd buffer size until getcwd is successful */
       size_t len = 0;
       while (1) 
@@ -88,8 +83,10 @@ main(int argc, char *argv[])
         else break;
       }
     }
+	#endif
     char *homedir = getenv("HOME");
     
+	#if 0
     { /* Replace home directory prefix with ~ */
       size_t len = strlen(homedir);
       tmp_cwd = cwd;
@@ -99,11 +96,25 @@ main(int argc, char *argv[])
         *tmp_cwd = '~';
       }
     }
+	#endif
 
-    login = getlogin();
-    gethostname(hostname, sizeof(hostname));
-
+    //login = getlogin();
+   //gethostname(hostname, sizeof(hostname));
+	
     /* Print out a simple prompt */
+	if(fg_onlymodeflag == 1)
+	{
+		if(fg_onlymode == 0)
+		{
+			printf("Exiting foreground-only mode\n");
+		}
+		else
+		{
+			printf("Entering foreground-only mode (& is now ignored)\n");
+		}
+		fg_onlymodeflag = 0;
+		fflush(stdout);
+	}
     fprintf(stderr, ":");
 	
     /* Call custom tokenizing function */
@@ -117,20 +128,13 @@ main(int argc, char *argv[])
 
     if(usrinputcheck(toks, &num_toks, &inrd, &outrd, &bg) != -1)
     {
-		//printf("inrd = %d, outrd = %d | bg = %d\n", inrd, outrd, bg);
-		//fflush(stdout);
-		
-		/* 	Iterate through our tokens, calling dollarztopid()
-			This results in all instances of "$$" being
-			replaced with smallsh's pid...
-		*/
 		for (size_t i=0; i<num_toks; i++)
-		{
-			dollarztopid(toks[i], smallshpid);
+		{ 	/* Replace all instances of "$$" with pid */
+			toks[i] = dollarztopid(toks[i], smallshpid);
 		}
 			
 		if (strcmp(toks[0], "cd")==0)
-		{ /* cd command -- shell internals */
+		{ /* cd command -- built in */
 			if (num_toks == 1) 
 			{
 			  if(chdir(homedir) == -1)
@@ -152,19 +156,18 @@ main(int argc, char *argv[])
 		}
 		#endif
 		else if (strcmp(toks[0], "status")==0)
-		{ /* echo command! -- shell internals */
-			printf("%d\n", status);
+		{ /* status command! -- built in */
+			printf("exit status %d\n", status);
 			fflush(stdout);
-			
 		}
 		else if (strcmp(toks[0], "exit")==0)
-		{ /* echo command! -- shell internals */
+		{ /* exit command! -- built in */
 			size_t i;
 			for (i=0; i<num_toks; ++i)
 				free(toks[i]);
 
 			free(toks);
-			free(cwd);
+			//free(cwd);
 			signal(SIGQUIT, SIG_IGN);
 			kill(0, SIGQUIT);
 			exit(0);
@@ -178,7 +181,7 @@ main(int argc, char *argv[])
 			
 			if(bg == 1)
 			{
-				signal(SIGCHLD,handlesig);
+				signal(SIGCHLD,handlesigchld);
 			}
 			
 			int childstatus = NULL;
@@ -189,9 +192,16 @@ main(int argc, char *argv[])
 				/* Check for i/o redirection */
 				if(ioredirect(toks, num_toks, inrd, outrd) != -1)
 				{
-					/* Child will respond to SIGINT */
-					signal(SIGINT, SIG_DFL);
+					/* All children should ignore SIGTSTP */
+					signal(SIGTSTP, SIG_IGN);
 					
+					/* Child will respond to SIGINT */
+					if(bg == 0)
+						signal(SIGINT, SIG_DFL);
+					
+					else if (bg == 1)
+						signal(SIGINT, SIG_IGN);
+	
 					execvp(toks[0], toks);
 					err(errno, "failed to exec");
 				}
@@ -204,16 +214,16 @@ main(int argc, char *argv[])
 			}
 			else
 			{
-				if(bg == 0)
-				{
-					pid = waitpid(pid, &childstatus, 0);
-				}
-				else if (bg != 0)
+				if (bg == 1 && fg_onlymode == 0) /* Run proc in background */
 				{
 					printf("background pid is %d\n", pid);
 					children[num_children] = pid;
 					num_children++;
 					pid = waitpid(pid, &childstatus, WNOHANG);
+				}
+				else /* Run proc in foreground */
+				{
+					pid = waitpid(pid, &childstatus, 0);
 				}
 
 				if(WIFEXITED(childstatus) && bg == 0)
@@ -235,150 +245,32 @@ main(int argc, char *argv[])
 	  }
   }
   free(toks);
-  free(cwd);
+  //free(cwd);
 
 }
 
-/*
-	Checks for the following within our input
-	- If num_toks > 0
-	- If line starts with '#'
-	- Presence of '<'/'>' or '&'
-	
-	Returns -1 if line should not be ran (0 tokens, 
-		or line starts with '#')
-	Returns 0 otherwise.
-	
-	Sets input/output redirection flag (inrd/outrd) to its index if '<'/'>' is found (0 otherwise).
-	
-	Sets background flag (bg) to 1 if '&' is present at end of input (0 otherwise).
-	When background flag is set, '&' is replaced with char*(0), and num_toks is decreased by 1.
-	Note-- this means the first 2 arguments can be modified.
-*/
-int usrinputcheck(char** toks, size_t *num_toks, unsigned int *inrd, unsigned int *outrd, unsigned int *bg)
+void handlesigchld()
 {
-	*inrd = -1;
-	*outrd = -1;
-	*bg = 0;
-	
-	if(*num_toks == 0)
-		return -1;
-
-	else if(*num_toks > 0 && toks[0][0] == '#')
-		return -1;
-
-	else
+	for(int i = 0; i < num_children; i++)
 	{
-		for(size_t i = 0; i < *num_toks; i++)
+		int childstatus;
+		if(waitpid(children[i], &childstatus, WNOHANG) != 0 && children[i] != 0)
 		{
-			if(strcmp(toks[i], "<") == 0) /* Sets input redirection flag */
+			if(WIFEXITED(childstatus))
 			{
-				*inrd = i;
+				int status = WEXITSTATUS(childstatus);
+				printf("\nbackground pid %d is done: terminated by signal %d\n:", children[i], childstatus);
 			}
-			else if(strcmp(toks[i], ">") == 0) /* Sets output redirection flag */
+			else
+				printf("\nbackground pid %d is done: terminated by signal %d\n", children[i], WTERMSIG(childstatus));
+
+			fflush(stdout);
+			for(int j = i; j < num_children; j++)
 			{
-				*outrd = i;
+				children[j] = children[j + 1];
+				//printf("%d\n", children[j]);
 			}
-		}
-		
-		if(strcmp(toks[*num_toks - 1], "&") == 0)
-		{
-			*bg = 1; /* Sets background flag */
-			toks[*num_toks - 1] = (char*)(0);
-			*num_toks = *num_toks - 1;
-		}
-		return 0;
-	}
-}
-
-/*
-	Finds any instances of "$$" within a given token (original)
-	and replaces it with the given pid.
-	
-	Value of char* original is modified.
-	No return value.
-*/
-void dollarztopid(char* original, const pid_t pid)
-{
-	const int pidint = pid;
-	char pidstr[11] = {} ;
-	sprintf(pidstr, "%d", pidint);
-
-	for (int i = 0; i < strlen(original); i++)
-	{
-		if(original[i] == '$')
-		{
-			i++;
-			if(original[i] == '$')
-			{
-				char* tmp1 = NULL;
-				tmp1 = malloc(sizeof(original) + sizeof(pidstr));
-				char* tmp2 = NULL;
-				tmp2 = malloc(sizeof(original));
-				strncpy(tmp1, original, i - 1);
-				strncpy(tmp2, &original[i+1], strlen(original) - (i));
-				strcat(tmp1, pidstr);
-				strcat(tmp1, tmp2);
-				//char * tmp3 = realloc(original, sizeof(tmp1));
-
-				strcpy(original, tmp1);
-				free(tmp1);
-				free(tmp2);			
-			}		
+		break;
 		}
 	}
-}
-
-/*
-	This function is called when input/output redirection is needed.
-	The goal of this function is to properly redirect i/o before the
-	child calls exec.
-	
-	Returns 0 if program is okay to exec.
-	Returns -1 if program should NOT exec.
-*/
-int ioredirect(char** toks, int num_toks, const int inrd, const int outrd)
-{
-	
-	if(inrd != -1 && inrd < num_toks - 1)
-	{
-		char* filename = toks[inrd + 1];
-		int fd = 0;
-		if( (fd = open(filename, O_RDONLY)) != -1)
-		{
-			if( dup2(fd, STDIN_FILENO) == -1)
-			{
-				return -1;
-			}
-			
-			toks[inrd + 1] = (char*)(0);
-			toks[inrd] = (char*)(0);
-			
-			close(fd);
-		}
-		else
-		{
-			return -1;
-		}
-	}
-	
-	if(outrd != -1 && outrd < num_toks - 1)
-	{
-		char* filename = toks[outrd + 1];
-		//printf("hey\n");
-		//printf( "FILENAME: %s", filename);
-		fflush(stdout);
-		int fd = 0;
-		if( (fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, S_IRWXU | S_IRWXG)) != -1)
-		{
-			dup2(fd, STDOUT_FILENO);
-			//dup2(fd, STDERR_FILENO);
-			
-			toks[outrd + 1] = (char*)(0);
-			toks[outrd] = (char*)(0);
-			
-			close(fd);
-		}
-	}
-return 0;
 }

@@ -34,6 +34,8 @@
  */
  
 #include "token-parser.h"
+#include "input-handling.h"
+
 #include <stdio.h>
 #include <err.h>
 #include <errno.h>
@@ -42,7 +44,7 @@
 #include <string.h>
 
 #ifndef BASE_TOK_SIZE
-	#define BASE_TOK_SIZE 16
+	#define BASE_TOK_SIZE 512
 #endif
 
 #ifndef BASE_TOK_NUM
@@ -105,10 +107,9 @@ size_t readTokens(char ***toks, size_t *tok_num)
 				printf("need to realloc!\n");
 				fflush(stdout);
 			}
-				
 			/* 	If we have alloc'd enough space within the token, 
 				simply copy token over and break. */
-			if( tok_size >= strlen(tmptok) ) 
+			if( tok_size >= strlen(tmptok)) 
 			{
 				//printf("Copying token over......\n");
 				(*toks)[cur_tok] = tmptok;
@@ -124,7 +125,7 @@ size_t readTokens(char ***toks, size_t *tok_num)
 				tok_size *= 2;
 				if(((*toks)[cur_tok] = realloc((*toks)[cur_tok], tok_size * sizeof((*toks)[cur_tok]))) == NULL)
 				{
-					err(errno, "realloc failed");
+					err(errno, "realloc failed in token.c line 127");
 				}
 			}
 		}
