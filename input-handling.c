@@ -129,7 +129,8 @@ int ioredirect(char** toks, int num_toks, const int inrd, const int outrd)
 			close(fd);
 		}
 		else
-		{
+		{	
+			err(errno, "Input redirection failed");
 			return -1;
 		}
 	}

@@ -21,29 +21,15 @@
 /* These global variables are used to store the pid values of
 	all background child processes currently running.
 */
-pid_t children[MAX_BGPROCS];
-int num_children = 0; // # of background child processes
+static volatile sig_atomic_t children[MAX_BGPROCS];
+static volatile sig_atomic_t num_children = 0; // # of background child processes
 
-/* Background mode flag */
-unsigned int fg_onlymode = 0;
-unsigned int fg_onlymodeflag = 0;
+/* Background mode flags */
+static volatile sig_atomic_t fg_onlymode = 0;
+static volatile sig_atomic_t fg_onlymodeflag = 0;
 
 void handlesigchld();
-
-void handlesigtstp()
-{
-	fg_onlymodeflag = 1;
-	
-	if(fg_onlymode == 0)
-	{
-		fg_onlymode = 1;
-	}
-	else if(fg_onlymode == 1)
-	{
-		fg_onlymode = 0;
-	}	
-}
-
+void handlesigtstp();
 
 int
 main(int argc, char *argv[])
@@ -115,6 +101,7 @@ main(int argc, char *argv[])
 		fg_onlymodeflag = 0;
 		fflush(stdout);
 	}
+			
     fprintf(stderr, ":");
 	
     /* Call custom tokenizing function */
@@ -259,18 +246,37 @@ void handlesigchld()
 			if(WIFEXITED(childstatus))
 			{
 				int status = WEXITSTATUS(childstatus);
-				printf("\nbackground pid %d is done: terminated by signal %d\n:", children[i], childstatus);
+				printf("\nbackground pid %d is done: terminated by signal %d\n:", children[i], status);
+				//write(STDOUT_FILENO, "\nbackground pid %d is done: terminated by signal", 60);
+				//write(STDOUT_FILENO, status, 6);
 			}
 			else
+			{
 				printf("\nbackground pid %d is done: terminated by signal %d\n", children[i], WTERMSIG(childstatus));
+				//write(STDOUT_FILENO, "\ntesting1\n", 10);
+
+			}
 
 			fflush(stdout);
 			for(int j = i; j < num_children; j++)
 			{
 				children[j] = children[j + 1];
-				//printf("%d\n", children[j]);
 			}
 		break;
 		}
 	}
+}
+
+void handlesigtstp()
+{
+	fg_onlymodeflag = 1;
+	
+	if(fg_onlymode == 0)
+	{
+		fg_onlymode = 1;
+	}
+	else if(fg_onlymode == 1)
+	{
+		fg_onlymode = 0;
+	}	
 }
