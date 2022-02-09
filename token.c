@@ -51,7 +51,7 @@
 	#define BASE_TOK_NUM 512
 #endif
 
-size_t readTokens(char ***toks, size_t *tok_num)
+size_t readTokens(char ***toks, size_t *tok_num, const pid_t pid)
 {
 	/*	"Some magic to allocate the token list"
 		-Prof Gambord
@@ -94,8 +94,10 @@ size_t readTokens(char ***toks, size_t *tok_num)
 	linesize = getline(&line, &linelength, stdin); //Getting user input from stdin
 	
 	char* tmptok; // Temporary token
+	char* tmptok2;
 	char* saveptr = NULL;
 	tmptok = strtok_r(line, " \n", &saveptr);
+	tmptok2 = dollarztopid(tmptok, pid);
 	while(tmptok != NULL)
 	{	
 		while(1)
@@ -109,14 +111,15 @@ size_t readTokens(char ***toks, size_t *tok_num)
 			}
 			/* 	If we have alloc'd enough space within the token, 
 				simply copy token over and break. */
-			if( tok_size >= strlen(tmptok)) 
+			if( tok_size >= strlen(tmptok2)) 
 			{
 				//printf("Copying token over......\n");
-				(*toks)[cur_tok] = tmptok;
+				(*toks)[cur_tok] = tmptok2;
 				(*toks)[cur_tok + 1] = (char*)(0);
 				//printf("Copy successful, (*toks)[cur_tok] == %s\n", *toks[cur_tok]);
 				cur_tok++;
 				tmptok = strtok_r(NULL, " \n", &saveptr);
+				tmptok2 = dollarztopid(tmptok, pid);
 				break;
 			}	
 			else // Otherwize, increase tok_size, realloc, and try again!

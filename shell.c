@@ -105,7 +105,7 @@ main(int argc, char *argv[])
     fprintf(stderr, ":");
 	
     /* Call custom tokenizing function */
-    num_toks = readTokens(&toks, &toks_size);
+    num_toks = readTokens(&toks, &toks_size, smallshpid);
     size_t i;
 
 
@@ -114,12 +114,7 @@ main(int argc, char *argv[])
 	unsigned int bg = 0; 		//Flag for running proc in background ('&' at end of input line)
 
     if(usrinputcheck(toks, &num_toks, &inrd, &outrd, &bg) != -1)
-    {
-		for (size_t i=0; i<num_toks; i++)
-		{ 	/* Replace all instances of "$$" with pid */
-			toks[i] = dollarztopid(toks[i], smallshpid);
-		}
-			
+    {	
 		if (strcmp(toks[0], "cd")==0)
 		{ /* cd command -- built in */
 			if (num_toks == 1) 

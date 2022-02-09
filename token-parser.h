@@ -2,6 +2,7 @@
 #define TOKEN_PARSER_H__
 
 #include <stddef.h>
+#include <unistd.h>
 
 /* Scans stdin for shell tokens and parses them. Supports quoting and
  * backslash escaping, according to POSIX specification.
@@ -37,7 +38,7 @@
  *  tok_num: sizeof(toks)
  *  return value: 3
  */
-size_t readTokens(char ***toks, size_t *tok_num);
+size_t readTokens(char ***toks, size_t *tok_num, const pid_t pid);
 
 
 

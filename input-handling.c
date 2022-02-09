@@ -68,36 +68,42 @@ int usrinputcheck(char** toks, size_t *num_toks, unsigned int *inrd, unsigned in
 	and replaces it with the given pid.
 	
 	Value of char* original is modified.
-	No return value.
+	Returns modified char.
 */
 char* dollarztopid(char* original, const pid_t pid)
 {
-	const int pidint = pid;
-	//sprintf(pidstr, "%d", pidint);
-				
-	for (int i = 0; i < strlen(original) - 1; i++)
+	if(original != NULL)
 	{
-		if(original[i] == '$')
+		const int pidint = pid;
+		char* new = malloc(sizeof(original));
+		strcpy(new, original);
+					
+		for (int i = 0; i < strlen(original) - 1; i++)
 		{
-			i++;
 			if(original[i] == '$')
 			{
-				char* tmp1 = NULL;
-				tmp1 = malloc(sizeof(original) * 2);
-				char* tmp2 = NULL;
-				tmp2 = malloc(sizeof(original));
-				strncpy(tmp1, original, i - 1);
-				strncpy(tmp2, &original[i+1], strlen(original) - (i));
-				//strcat(tmp1, pidstr);
-				//strcat(tmp1, tmp2);
-				//strcpy(original, tmp1);
-				snprintf(original, 512, "%s%d%s", tmp1, pidint, tmp2);
-				free(tmp1);
-				free(tmp2);		
-			}		
+				i++;
+				if(original[i] == '$')
+				{
+					char* tmp1 = NULL;
+					tmp1 = malloc(sizeof(original) * 2);
+					char* tmp2 = NULL;
+					tmp2 = malloc(sizeof(original));
+					strncpy(tmp1, original, i - 1);
+					strncpy(tmp2, &original[i+1], strlen(original) - (i));
+					//strcat(tmp1, pidstr);
+					//strcat(tmp1, tmp2);
+					//strcpy(original, tmp1);
+					new = realloc(new, sizeof(new) + 6);
+					snprintf(new, 512, "%s%d%s", tmp1, pidint, tmp2);
+					free(tmp1);
+					free(tmp2);		
+				}		
+			}
 		}
+		return new;
 	}
-	
+
 return original;
 }
 
