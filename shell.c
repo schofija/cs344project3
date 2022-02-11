@@ -71,7 +71,7 @@ main(int argc, char *argv[])
 	{
 		for(int i = 0; i<bgflag; i++)
 		{
-			printf("\nbackground pid %d is done: terminated by signal %d\n:", bgpid[i], bgstatus[i]);
+			printf("background pid %d is done: terminated by signal %d\n", bgpid[i], bgstatus[i]);
 			fflush(stdout);
 		}
 		bgflag = 0;
