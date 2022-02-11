@@ -21,31 +21,24 @@
 /* These global variables are used to store the pid values of
 	all background child processes currently running.
 */
-static volatile sig_atomic_t children[MAX_BGPROCS];
-static volatile sig_atomic_t num_children = 0; // # of background child processes
+static volatile sig_atomic_t children[MAX_BGPROCS]; /* Array of background processes */
+static volatile sig_atomic_t num_children = 0; /* # of background child processes */
 
 static volatile sig_atomic_t bgflag = 0; /* Flag to determine if we should print. Also stores how many BG procs finished */
-static volatile sig_atomic_t bgpid[MAX_BGPROCS];
-static volatile sig_atomic_t bgstatus[MAX_BGPROCS];
+static volatile sig_atomic_t bgpid[MAX_BGPROCS]; /* Stores all finished background proc pids that need to be printed */
+static volatile sig_atomic_t bgstatus[MAX_BGPROCS]; /* Stores all exit status's that need to be printed */
 
 /* Background mode flags */
 static volatile sig_atomic_t fg_onlymode = 0;
 static volatile sig_atomic_t fg_onlymodeflag = 0;
 
-/* Foreground mode flags */
-static volatile sig_atomic_t sigintflag = 0;
-static volatile sig_atomic_t num_fgchildren = 0;
+/* Foreground process flags */
+static volatile sig_atomic_t sigintflag = 0; /* Set to 1 if SIGINT has been sent */
+static volatile sig_atomic_t num_fgchildren = 0; /* Tracks if foreground children exist */
 
 void handlesigchld();
 void handlesigtstp();
-
-void handlesigint()
-{
-	if(num_fgchildren > 0)
-	{
-		sigintflag = 1;
-	}
-}
+void handlesigint();
 
 int
 main(int argc, char *argv[])
@@ -53,10 +46,6 @@ main(int argc, char *argv[])
   char **toks = NULL;
   size_t toks_size;
   size_t num_toks;
-  //char *cwd = NULL;
-  //char *tmp_cwd;
-  //char *login;
-  //char hostname[HOST_NAME_MAX+1];
   int status = NULL;
   
 	const pid_t smallshpid = getpid();
@@ -69,48 +58,16 @@ main(int argc, char *argv[])
 	
   do
   {
-	  
-	#if 0
-    { /* Increase cwd buffer size until getcwd is successful */
-      size_t len = 0;
-      while (1) 
-      {
-        len += 16;
-        cwd = realloc(cwd, len * sizeof *cwd);
-        if (getcwd(cwd, len) == NULL)
-        {
-          if (errno == ERANGE) continue;
-          err(errno, "getcwd failed");
-        }
-        else break;
-      }
-    }
-	#endif
     char *homedir = getenv("HOME");
     
-	#if 0
-    { /* Replace home directory prefix with ~ */
-      size_t len = strlen(homedir);
-      tmp_cwd = cwd;
-      if(strncmp(tmp_cwd, homedir, len) == 0)
-      {
-        tmp_cwd += len-1;
-        *tmp_cwd = '~';
-      }
-    }
-	#endif
-
-    //login = getlogin();
-   //gethostname(hostname, sizeof(hostname));
-	
-    /* Print out a simple prompt */
-	if(sigintflag == 1)
+	if(sigintflag == 1) /* If sigintflag is set, print a message*/
 	{
+		status = 2; /* Manually setting status to 2 (SIGINT) */
 		sigintflag = 0;
 		printf("\nTerminated by signal 2\n");
 	}
 	
-	if(bgflag > 0)
+	if(bgflag > 0) /* If bgflag is set, print out all background processes that have ended */
 	{
 		for(int i = 0; i<bgflag; i++)
 		{
@@ -120,7 +77,7 @@ main(int argc, char *argv[])
 		bgflag = 0;
 	}
 	
-	if(fg_onlymodeflag == 1)
+	if(fg_onlymodeflag == 1) /* If flag is set, print status of foreground-only mode */
 	{
 		if(fg_onlymode == 0)
 		{
@@ -134,18 +91,18 @@ main(int argc, char *argv[])
 		fflush(stdout);
 	}
 			
+	/* Print out a simple prompt */
     fprintf(stderr, ":");
 	
     /* Call custom tokenizing function */
     num_toks = readTokens(&toks, &toks_size, smallshpid);
     size_t i;
 
-
-	unsigned int inrd = -1; 		//Flag for input redirection ('<')
+	unsigned int inrd = -1; 	//Flag for input redirection ('<')
 	unsigned int outrd = -1; 	//Flag for output redirection ('>').
 	unsigned int bg = 0; 		//Flag for running proc in background ('&' at end of input line)
 
-    if(usrinputcheck(toks, &num_toks, &inrd, &outrd, &bg) != -1)
+    if(usrinputcheck(toks, &num_toks, &inrd, &outrd, &bg) != -1) /* Determine if user input is a blankline (-1), or if it should be ran */
     {	
 		if (strcmp(toks[0], "cd")==0)
 		{ /* cd command -- built in */
@@ -161,14 +118,6 @@ main(int argc, char *argv[])
 			  perror("Failed to change directory");
 			}
 		}
-		#if 0
-		else if (strcmp(toks[0], "echo")==0)
-		{ /* echo command! -- shell internals */
-			if (num_toks > 1) printf("%s", toks[1]);
-			for (i=2; i<num_toks; ++i) printf(" %s", toks[i]);
-			printf("\n");
-		}
-		#endif
 		else if (strcmp(toks[0], "status")==0)
 		{ /* status command! -- built in */
 			printf("exit status %d\n", status);
@@ -181,7 +130,6 @@ main(int argc, char *argv[])
 				free(toks[i]);
 
 			free(toks);
-			//free(cwd);
 			signal(SIGQUIT, SIG_IGN);
 			kill(0, SIGQUIT);
 			exit(0);
@@ -194,7 +142,7 @@ main(int argc, char *argv[])
 		{ /* Default behavior: fork and exec */
 			
 			if(bg == 1)
-			{
+			{ /* If command is to be ran in background mode, set signal handler for SIGCHLD*/
 				signal(SIGCHLD,handlesigchld);
 			}
 			
@@ -209,14 +157,13 @@ main(int argc, char *argv[])
 					/* All children should ignore SIGTSTP */
 					signal(SIGTSTP, SIG_IGN);
 					
-					/* Child will respond to SIGINT */
 					if(bg == 0)
 					{			
-						signal(SIGINT, SIG_DFL); //Child process kills itself upon CTRL+C
+						signal(SIGINT, SIG_DFL); /* Child procs in foreground mode respond to SIGINT */
 					}
 					
 					else if (bg == 1)
-						signal(SIGINT, SIG_IGN);
+						signal(SIGINT, SIG_IGN); /* Child procs in background mode IGNORE SIGINT */
 	
 					execvp(toks[0], toks);
 					err(errno, "failed to exec");
@@ -233,7 +180,7 @@ main(int argc, char *argv[])
 				if (bg == 1 && fg_onlymode == 0) /* Run proc in background */
 				{
 					printf("background pid is %d\n", pid);
-					children[num_children] = pid;
+					children[num_children] = pid; 	/* Update array with new background child process */
 					num_children = num_children + 1;
 					pid = waitpid(pid, &childstatus, WNOHANG);
 				}
@@ -263,8 +210,6 @@ main(int argc, char *argv[])
 	  }
   }
   free(toks);
-  //free(cwd);
-
 }
 
 void handlesigchld() /* Handles background processes that have ended and sent a SIGCHLD */
@@ -277,20 +222,17 @@ void handlesigchld() /* Handles background processes that have ended and sent a 
 			if(WIFEXITED(childstatus))
 			{
 				int status = WEXITSTATUS(childstatus);
-				//printf("\nbackground pid %d is done: terminated by signal %d\n:", children[i], status);
 				bgpid[bgflag] = children[i];
 				bgstatus[bgflag] = status;
 				bgflag = bgflag + 1; //increment bgflag
 			}
 			else
 			{
-				//printf("\nbackground pid %d is done: terminated by signal %d\n", children[i], WTERMSIG(childstatus));
 				bgpid[bgflag] = children[i]; //set bgpid[bgflag] to pid
 				bgstatus[bgflag] = WTERMSIG(childstatus); //set bgstatus[bgflag] to exit status
 				bgflag = bgflag + 1; //increment bgflag
 			}
 
-			fflush(stdout);
 			if(num_children == 1)
 			{
 				children[0] = 0;
@@ -321,4 +263,12 @@ void handlesigtstp() /* Toggles global flags. These flags are used to determine 
 	{
 		fg_onlymode = 0;
 	}	
+}
+
+void handlesigint() /* Sets sigintflag if there were foreground children killed by the SIGINT signal */
+{
+	if(num_fgchildren > 0)
+	{
+		sigintflag = 1;
+	}
 }

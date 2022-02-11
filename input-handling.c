@@ -91,9 +91,6 @@ char* dollarztopid(char* original, const pid_t pid)
 					tmp2 = malloc(sizeof(original));
 					strncpy(tmp1, original, i - 1);
 					strncpy(tmp2, &original[i+1], strlen(original) - (i));
-					//strcat(tmp1, pidstr);
-					//strcat(tmp1, tmp2);
-					//strcpy(original, tmp1);
 					new = realloc(new, sizeof(new) + 6);
 					snprintf(new, 512, "%s%d%s", tmp1, pidint, tmp2);
 					free(tmp1);
