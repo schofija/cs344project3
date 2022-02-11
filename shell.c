@@ -24,12 +24,28 @@
 static volatile sig_atomic_t children[MAX_BGPROCS];
 static volatile sig_atomic_t num_children = 0; // # of background child processes
 
+static volatile sig_atomic_t bgflag = 0; /* Flag to determine if we should print. Also stores how many BG procs finished */
+static volatile sig_atomic_t bgpid[MAX_BGPROCS];
+static volatile sig_atomic_t bgstatus[MAX_BGPROCS];
+
 /* Background mode flags */
 static volatile sig_atomic_t fg_onlymode = 0;
 static volatile sig_atomic_t fg_onlymodeflag = 0;
 
+/* Foreground mode flags */
+static volatile sig_atomic_t sigintflag = 0;
+static volatile sig_atomic_t num_fgchildren = 0;
+
 void handlesigchld();
 void handlesigtstp();
+
+void handlesigint()
+{
+	if(num_fgchildren > 0)
+	{
+		sigintflag = 1;
+	}
+}
 
 int
 main(int argc, char *argv[])
@@ -47,7 +63,7 @@ main(int argc, char *argv[])
 	
 	if(getpid() == smallshpid)
 	{
-		signal(SIGINT, SIG_IGN);
+		signal(SIGINT, handlesigint);
 		signal(SIGTSTP, handlesigtstp);
 	}
 	
@@ -88,6 +104,22 @@ main(int argc, char *argv[])
    //gethostname(hostname, sizeof(hostname));
 	
     /* Print out a simple prompt */
+	if(sigintflag == 1)
+	{
+		sigintflag = 0;
+		printf("\nTerminated by signal 2\n");
+	}
+	
+	if(bgflag > 0)
+	{
+		for(int i = 0; i<bgflag; i++)
+		{
+			printf("\nbackground pid %d is done: terminated by signal %d\n:", bgpid[i], bgstatus[i]);
+			fflush(stdout);
+		}
+		bgflag = 0;
+	}
+	
 	if(fg_onlymodeflag == 1)
 	{
 		if(fg_onlymode == 0)
@@ -179,7 +211,9 @@ main(int argc, char *argv[])
 					
 					/* Child will respond to SIGINT */
 					if(bg == 0)
-						signal(SIGINT, SIG_DFL);
+					{			
+						signal(SIGINT, SIG_DFL); //Child process kills itself upon CTRL+C
+					}
 					
 					else if (bg == 1)
 						signal(SIGINT, SIG_IGN);
@@ -200,16 +234,18 @@ main(int argc, char *argv[])
 				{
 					printf("background pid is %d\n", pid);
 					children[num_children] = pid;
-					num_children++;
+					num_children = num_children + 1;
 					pid = waitpid(pid, &childstatus, WNOHANG);
 				}
 				else /* Run proc in foreground */
 				{
+					num_fgchildren = num_fgchildren + 1;
 					pid = waitpid(pid, &childstatus, 0);
 				}
 
 				if(WIFEXITED(childstatus) && bg == 0)
 				{
+					num_fgchildren = 0;
 					status = WEXITSTATUS(childstatus);
 				}
 			}
@@ -231,7 +267,7 @@ main(int argc, char *argv[])
 
 }
 
-void handlesigchld()
+void handlesigchld() /* Handles background processes that have ended and sent a SIGCHLD */
 {
 	for(int i = 0; i < num_children; i++)
 	{
@@ -241,28 +277,39 @@ void handlesigchld()
 			if(WIFEXITED(childstatus))
 			{
 				int status = WEXITSTATUS(childstatus);
-				printf("\nbackground pid %d is done: terminated by signal %d\n:", children[i], status);
-				//write(STDOUT_FILENO, "\nbackground pid %d is done: terminated by signal", 60);
-				//write(STDOUT_FILENO, status, 6);
+				//printf("\nbackground pid %d is done: terminated by signal %d\n:", children[i], status);
+				bgpid[bgflag] = children[i];
+				bgstatus[bgflag] = status;
+				bgflag = bgflag + 1; //increment bgflag
 			}
 			else
 			{
-				printf("\nbackground pid %d is done: terminated by signal %d\n", children[i], WTERMSIG(childstatus));
-				//write(STDOUT_FILENO, "\ntesting1\n", 10);
-
+				//printf("\nbackground pid %d is done: terminated by signal %d\n", children[i], WTERMSIG(childstatus));
+				bgpid[bgflag] = children[i]; //set bgpid[bgflag] to pid
+				bgstatus[bgflag] = WTERMSIG(childstatus); //set bgstatus[bgflag] to exit status
+				bgflag = bgflag + 1; //increment bgflag
 			}
 
 			fflush(stdout);
-			for(int j = i; j < num_children; j++)
+			if(num_children == 1)
 			{
-				children[j] = children[j + 1];
+				children[0] = 0;
+				num_children = 0;
+			}
+			else
+			{
+				for(int j = i; j < num_children; j++)
+				{
+					children[j] = children[j + 1];
+				}
+				num_children = num_children - 1;
 			}
 		break;
 		}
 	}
 }
 
-void handlesigtstp()
+void handlesigtstp() /* Toggles global flags. These flags are used to determine if/what to print */
 {
 	fg_onlymodeflag = 1;
 	
