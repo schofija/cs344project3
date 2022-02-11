@@ -18,6 +18,6 @@
 
 int usrinputcheck(char**, size_t*, unsigned int*, unsigned int*, unsigned int*);
 char* dollarztopid(char*, const pid_t);
-int ioredirect(char**, int, const int, const int);
+int ioredirect(char**, int, const int, const int, const int);
 
 #endif //INPUT_HANDLING_H__

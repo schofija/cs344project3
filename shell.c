@@ -204,7 +204,7 @@ main(int argc, char *argv[])
 			{ /* child */	
 
 				/* Check for i/o redirection */
-				if(ioredirect(toks, num_toks, inrd, outrd) != -1)
+				if(ioredirect(toks, num_toks, inrd, outrd, bg) != -1)
 				{
 					/* All children should ignore SIGTSTP */
 					signal(SIGTSTP, SIG_IGN);
